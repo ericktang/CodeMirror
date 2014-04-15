@@ -23,14 +23,14 @@
 
   // Two helper functions for encapsList
   function matchFirst(list) {
-    return function (stream, state) {
+    return function (stream) {
       for (var i = 0; i < list.length; ++i) {
         if (stream.match(list[i][0])) {
           return list[i][1];
         }
       }
       return false;
-    }
+    };
   }
 
   function matchSequence(list) {
@@ -45,7 +45,7 @@
         state.tokenize = encapsList;
         return "string";
       }
-    }
+    };
   }
 
   function encapsList(stream, state) {
@@ -150,13 +150,13 @@
         state.tokenize = encapsList;
         return state.tokenize(stream, state);
       },
-      "{": function(stream, state) {
+      "{": function(_stream, state) {
         if (state.phpEncapsStack && state.phpEncapsStack.length > 0) {
           state.phpEncapsStack[state.phpEncapsStack.length - 1]++;
         }
         return false;
       },
-      "}": function(stream, state) {
+      "}": function(_stream, state) {
         if (state.phpEncapsStack && state.phpEncapsStack.length > 0) {
           if (--state.phpEncapsStack[state.phpEncapsStack.length - 1] == 0)
             state.tokenize = encapsList;
