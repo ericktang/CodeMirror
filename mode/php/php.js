@@ -20,6 +20,83 @@
       return "string";
     };
   }
+  // Two helper functions for encapsList
+  function matchFirst(list) {
+    return function (stream, state) {
+      for (var i = 0; i < list.length; ++i) {
+        if (stream.match(list[i][0])) {
+          return list[i][1];
+        }
+      }
+      return false;
+    }
+  }
+  function matchSequence(list) {
+    if (list.length == 0) return encapsList;
+    return function (stream, state) {
+      var result = list[0](stream, state);
+      if (result !== false) {
+        state.tokenize = matchSequence(list.slice(1));
+        return result;
+      }
+      else {
+        state.tokenize = encapsList;
+        return "string";
+      }
+    }
+  }
+  function encapsList(stream, state) {
+    var escaped = false, next, end = false;
+
+    if (stream.current() == "\"") return "string";
+
+    // "Complex" syntax
+    if (stream.match("${", false) || stream.match('{$', false)) {
+      state.tokenize = null;
+      return "string";
+    }
+
+    // Simple syntax
+    if (stream.match(/\$[\w\$]+/)) {
+      // After the variable name there may appear array or object operator.
+      if (stream.match("[", false)) {
+        // Match array operator
+        state.tokenize = matchSequence([
+          matchFirst([["[", null]]),
+          matchFirst([
+            [/\d[\w\.]*/, "number"],
+            [/\$[\w\$]+/, "variable-2"],
+            [/[\w\$]+/, "variable"]
+          ]),
+          matchFirst([["]", null]])
+        ]);
+      }
+      if (stream.match("->", false)) {
+        // Match object operator
+        state.tokenize = matchSequence([
+          matchFirst([["->", null]]),
+          matchFirst([[/[\w\$]+/], "variable"])
+        ]);
+      }
+      return "variable-2";
+    }
+
+    // Normal string
+    while (
+      !stream.eol() &&
+      (!stream.match('{$', false)) &&
+      (!stream.match(/(\$[\w]+|\$\{)/, false) || escaped)
+    ) {
+      next = stream.next();
+      if (!escaped && next == "\"") { end = true; break; }
+      escaped = !escaped && next == "\\";
+    }
+    if (end) {
+      state.tokenize = null;
+      state.phpEncapsStack.pop();
+    }
+    return "string";
+  }
   var phpConfig = {
     name: "clike",
     keywords: keywords("abstract and array as break case catch class clone const continue declare default " +
@@ -53,6 +130,26 @@
         if (stream.eat("/")) {
           while (!stream.eol() && !stream.match("?>", false)) stream.next();
           return "comment";
+        }
+        return false;
+      },
+      "\"": function(stream, state) {
+        if (!state.phpEncapsStack)
+          state.phpEncapsStack = [];
+        state.phpEncapsStack.push(0);
+        state.tokenize = encapsList;
+        return state.tokenize(stream, state);
+      },
+      "{": function(stream, state) {
+        if (state.phpEncapsStack && state.phpEncapsStack.length > 0) {
+          state.phpEncapsStack[state.phpEncapsStack.length - 1]++;
+        }
+        return false;
+      },
+      "}": function(stream, state) {
+        if (state.phpEncapsStack && state.phpEncapsStack.length > 0) {
+          if (--state.phpEncapsStack[state.phpEncapsStack.length - 1] == 0)
+            state.tokenize = encapsList;
         }
         return false;
       }
